@@ -1,0 +1,266 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\Pessoa;
+use App\Models\Produto;
+use App\Models\Venda;
+use App\Models\Compra;
+use App\Models\Grupo;
+use App\Models\Marca;
+use Illuminate\Http\Request;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+
+class RelatorioController extends Controller
+{
+
+    public function pessoasTodas()
+    {
+        return Pessoa::orderBy('nome')->get();
+    }
+
+    public function pessoasPorTipo($tipo)
+    {
+        $tiposPermitidos = ['funcionario', 'cliente', 'fornecedor'];
+
+        $tipo = strtolower(trim($tipo));
+
+        abort_unless(
+            in_array($tipo, $tiposPermitidos, true),
+            422,
+            'Tipo inválido.'
+        );
+
+        return Pessoa::whereRaw('LOWER(tipo) = ?', [$tipo])
+            ->orderBy('nome')
+            ->get();
+    }
+
+    public function pessoasPorSexo($sexo)
+    {
+        $sexo = strtoupper(trim($sexo));
+
+        $sexosPermitidos = ['M', 'F'];
+
+        abort_unless(
+            in_array($sexo, $sexosPermitidos, true),
+            422,
+            'Sexo inválido. Use M ou F.'
+        );
+
+        return Pessoa::where('sexo', $sexo)
+            ->orderBy('nome')
+            ->get();
+    }
+
+    public function pessoasPorIdade($idade)
+    {
+        return Pessoa::whereNotNull('data_nascimento')
+            ->get()
+            ->filter(function ($pessoa) use ($idade) {
+                return Carbon::parse($pessoa->data_nascimento)->age == $idade;
+            })
+            ->values();
+    }
+
+    public function produtosPorGrupo($grupoId)
+    {
+        return Produto::where('grupo_id', $grupoId)
+            ->with(['grupo', 'marca'])
+            ->orderBy('nome')
+            ->get();
+    }
+
+    public function produtosPorMarca($marcaId)
+    {
+        return Produto::where('marca_id', $marcaId)
+            ->with(['grupo', 'marca'])
+            ->orderBy('nome')
+            ->get();
+    }
+
+    public function produtosAtivosInativos()
+    {
+        return Produto::select('ativo')
+            ->selectRaw('COUNT(*) as total')
+            ->groupBy('ativo')
+            ->orderBy('ativo')
+            ->get();
+    }
+
+    public function periodo(Request $request): array
+    {
+        $start = $request->query('start');
+        $end = $request->query('end');
+
+        if (!$start || !$end) {
+            $end = now()->endOfDay();
+            $start = now()->subDays(30)->startOfDay();
+            return [$start, $end];
+        }
+
+        return [Carbon::parse($start)->startOfDay(), Carbon::parse($end)->endOfDay()];
+    }
+
+    public function vendasPeriodo(Request $request)
+    {
+        [$start, $end] = $this->periodo($request);
+
+        return Venda::whereBetween('data_venda', [$start->toDateString(), $end->toDateString()])
+            ->with(['cliente', 'produtos'])
+            ->orderBy('data_venda')
+            ->orderByDesc('valor_total')
+            ->get();
+    }
+
+    public function vendasPorCliente(Request $request)
+    {
+        [$start, $end] = $this->periodo($request);
+
+        return Venda::select('cliente_id')
+            ->selectRaw('SUM(valor_total) as total_vendas')
+            ->selectRaw('COUNT(*) as qtd_vendas')
+            ->whereBetween('data_venda', [$start->toDateString(), $end->toDateString()])
+            ->groupBy('cliente_id')
+            ->with('cliente:id,nome')
+            ->orderByDesc('total_vendas')
+            ->get();
+    }
+
+    public function produtosVendidosPeriodo(Request $request)
+    {
+        [$start, $end] = $this->periodo($request);
+
+        return Produto::select('produtos.id', 'produtos.nome')
+            ->selectRaw('SUM(produto_venda.quantidade) as qtd_vendida')
+            ->selectRaw('SUM(produto_venda.quantidade * produto_venda.preco) as valor_total')
+            ->join('produto_venda', 'produto_venda.produto_id', '=', 'produtos.id')
+            ->join('vendas', 'vendas.id', '=', 'produto_venda.venda_id')
+            ->whereBetween('data_venda', [$start->toDateString(), $end->toDateString()])
+            ->groupBy('produtos.id', 'produtos.nome')
+            ->orderByDesc('qtd_vendida')
+            ->get();
+    }
+
+    public function produtosSemVendas()
+    {
+        return Produto::doesntHave('vendas')
+            ->with(['grupo', 'marca'])
+            ->orderBy('nome')
+            ->get();
+    }
+
+    
+
+    public function mediaTempoVendaPorProduto()
+    {
+        $primeiraCompra = DB::table('compra_produto')
+            ->join('compras', 'compras.id', '=', 'compra_produto.compra_id')
+            ->select(
+                'compra_produto.produto_id',
+                DB::raw('MIN(compras.data_compra) as primeira_compra')
+            )
+            ->groupBy('compra_produto.produto_id');
+
+        $primeiraVenda = DB::table('produto_venda')
+            ->join('vendas', 'vendas.id', '=', 'produto_venda.venda_id')
+            ->select(
+                'produto_venda.produto_id',
+                DB::raw('MIN(vendas.data_venda) as primeira_venda')
+            )
+            ->groupBy('produto_venda.produto_id');
+
+        $resultado = DB::table('produtos')
+            ->leftJoinSub($primeiraCompra, 'pc', function ($join) {
+                $join->on('pc.produto_id', '=', 'produtos.id');
+            })
+            ->leftJoinSub($primeiraVenda, 'pv', function ($join) {
+                $join->on('pv.produto_id', '=', 'produtos.id');
+            })
+            ->whereNotNull('pc.primeira_compra')
+            ->whereNotNull('pv.primeira_venda')
+            ->select(
+                'produtos.id',
+                'produtos.nome',
+                'pc.primeira_compra',
+                'pv.primeira_venda',
+
+                DB::raw("
+                    DATE_PART(
+                        'day',
+                        pv.primeira_venda::timestamp
+                        - pc.primeira_compra::timestamp
+                    ) as media_dias
+                ")
+            )
+            ->orderByDesc('media_dias')
+            ->get();
+
+        return response()->json($resultado);
+    }
+
+    public function vendasPorDia(Request $request)
+    {
+        [$start, $end] = $this->periodo($request);
+
+        return Venda::selectRaw('data_venda as dia')
+            ->selectRaw('COUNT(*) as qtd_vendas')
+            ->selectRaw('SUM(valor_total) as total_vendas')
+            ->whereBetween('data_venda', [$start->toDateString(), $end->toDateString()])
+            ->groupBy('dia')
+            ->orderBy('dia')
+            ->get();
+    }
+
+    public function gruposMarcasVendidosPeriodo(Request $request)
+    {
+        [$start, $end] = $this->periodo($request);
+
+        return DB::table('produto_venda')
+            ->join('vendas', 'vendas.id', '=', 'produto_venda.venda_id')
+            ->join('produtos', 'produtos.id', '=', 'produto_venda.produto_id')
+            ->join('grupos', 'grupos.id', '=', 'produtos.grupo_id')
+            ->join('marcas', 'marcas.id', '=', 'produtos.marca_id')
+
+            ->whereBetween('vendas.data_venda', [
+                $start->toDateString(),
+                $end->toDateString()
+            ])
+
+            ->select(
+                'grupos.nome as grupo',
+                'marcas.nome as marca',
+
+                DB::raw('SUM(produto_venda.quantidade) as qtd_vendida'),
+                DB::raw('SUM(produto_venda.quantidade * produto_venda.preco) as valor_total')
+            )
+
+            ->groupBy(
+                'grupos.nome',
+                'marcas.nome'
+            )
+
+            ->orderByDesc('qtd_vendida')
+            ->get();
+    }
+
+    public function comprasPeriodo(Request $request)
+    {
+        [$start, $end] = $this->periodo($request);
+
+        return Compra::whereBetween('data_compra', [$start->toDateString(), $end->toDateString()])
+            ->with(['fornecedor', 'produtos'])
+            ->orderBy('data_compra')
+            ->get();
+    }
+
+    public function comprasPorFornecedor($fornecedorId)
+    {
+        return Compra::where('fornecedor_id', $fornecedorId)
+            ->with(['fornecedor', 'produtos'])
+            ->orderBy('created_at')
+            ->get();
+    }
+}

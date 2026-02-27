@@ -1,0 +1,402 @@
+<script setup>
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import axios from 'axios'
+
+const BASE_URL = '/api/vendas'
+const abaSelecionada = ref('lista')
+const vendas = ref([])
+const produtos = ref([])
+const busca = ref('')
+const paginaAtual = ref(1)
+const itensPorPagina = 10
+const mensagemErro = ref('')
+
+
+const form = reactive({
+    id: null,
+    nome_cliente: '',
+    data_venda: '',
+    produtos: []
+})
+
+const modoEdicao = computed(() => form.id !== null)
+
+async function carregarDados() {
+    try {
+        const [v, p] = await Promise.all([
+            axios.get(BASE_URL),
+            axios.get('/api/produtos')
+        ])
+
+        vendas.value = v.data
+        produtos.value = p.data
+    } catch (e) {
+        console.error(e)
+    }
+}
+
+onMounted(() => {
+    carregarDados()
+    resetForm()
+})
+
+/* ========================= */
+/* PRODUTOS */
+/* ========================= */
+
+function adicionarProduto() {
+    form.produtos.push({
+        nome_produto: '',
+        quantidade: 1,
+        preco: 0
+    })
+}
+
+function removerProduto(index) {
+    form.produtos.splice(index, 1)
+}
+
+const valorTotal = computed(() =>
+    form.produtos.reduce((t, i) => t + (i.quantidade * i.preco), 0)
+)
+
+
+async function salvar() {
+
+    mensagemErro.value = ''
+    
+
+    if (!form.nome_cliente.trim()) {
+        mensagemErro.value = 'Informe o nome do cliente.'
+        return
+    }
+
+    if (!form.data_venda) {
+        mensagemErro.value = 'Informe a data da venda.'
+        return
+    }
+
+    if (!form.produtos.length) {
+        mensagemErro.value = 'Adicione pelo menos um produto.'
+        return
+    }
+
+    for (const item of form.produtos) {
+        if (!item.nome_produto) {
+            mensagemErro.value = 'Selecione um produto.'
+            return
+        }
+
+        if (!item.quantidade || item.quantidade < 1) {
+            mensagemErro.value = 'Quantidade inválida.'
+            return
+        }
+    }
+
+    const payload = {
+        nome_cliente: form.nome_cliente,
+        data_venda: form.data_venda,
+        produtos: form.produtos.map(item => ({
+            nome_produto: item.nome_produto,
+            quantidade: item.quantidade,
+            preco: item.preco
+        }))
+    }
+
+    try {
+
+        if (modoEdicao.value) {
+            await axios.put(`${BASE_URL}/${form.id}`, payload)
+        } else {
+            await axios.post(BASE_URL, payload)
+        }
+
+        resetForm()
+        await carregarDados()
+        abaSelecionada.value = 'lista'
+
+    } catch (err) {
+
+        if (err.response?.status === 422) {
+            mensagemErro.value = err.response.data.message ?? 'Dados inválidos.'
+        } else {
+            console.error(err)
+            mensagemErro.value = 'Erro interno ao salvar venda.'
+        }
+
+        setTimeout(() => {
+            mensagemErro.value = ''
+        }, 3000)
+    }
+}
+
+async function excluir(v) {
+    if (!confirm('Excluir venda?')) return
+    await axios.delete(`${BASE_URL}/${v.id}`)
+    await carregarDados()
+}
+
+function abrirEdicao(v) {
+
+    resetForm()
+
+    form.id = v.id
+    form.nome_cliente = v.cliente?.nome ?? ''
+    form.data_venda = v.data_venda
+
+    form.produtos = v.produtos.map(p => ({
+    nome_produto: p.nome,
+    quantidade: p.pivot.quantidade,
+    preco: p.pivot.preco
+    }))
+
+    abaSelecionada.value = 'novo'
+}
+
+function dataHoje() {
+    const hoje = new Date()
+    const ano = hoje.getFullYear()
+    const mes = String(hoje.getMonth() + 1).padStart(2, '0')
+    const dia = String(hoje.getDate()).padStart(2, '0')
+
+    return `${ano}-${mes}-${dia}`
+}
+
+function resetForm() {
+    form.id = null
+    form.nome_cliente = ''
+    form.data_venda = dataHoje()
+    form.produtos = []
+    adicionarProduto()
+}
+
+
+const vendasFiltradas = computed(() => {
+    const q = busca.value.toLowerCase()
+    if (!q) return vendas.value
+
+    return vendas.value.filter(v =>
+        v.cliente?.nome?.toLowerCase().includes(q)
+    )
+})
+
+watch(busca, () => paginaAtual.value = 1)
+
+function atualizarPreco(item) {
+    const produtoSelecionado = produtos.value.find(
+        p => p.nome === item.nome_produto
+    )
+
+    if (produtoSelecionado) {
+        item.preco = produtoSelecionado.preco_venda ?? produtoSelecionado.preco ?? 0
+    } else {
+        item.preco = 0
+    }
+}
+
+const totalPaginas = computed(() =>
+    Math.ceil(vendasFiltradas.value.length / itensPorPagina) || 1
+)
+
+const dadosPaginados = computed(() => {
+    const inicio = (paginaAtual.value - 1) * itensPorPagina
+    return vendasFiltradas.value.slice(inicio, inicio + itensPorPagina)
+})
+
+function btnClass(tipo) {
+    return [
+        'px-3 py-1 text-sm border rounded-lg',
+        abaSelecionada.value === tipo
+            ? 'bg-blue-600 text-white border-blue-600'
+            : 'bg-white hover:bg-gray-100'
+    ]
+}
+</script>
+
+<template>
+    <div class="pt-15 space-y-8">
+
+        <h2 class="text-2xl font-bold">Cadastro de Vendas</h2>
+
+        <!-- Abas -->
+        <div class="flex gap-2 flex-wrap">
+            <button @click="resetForm(); abaSelecionada = 'novo'" :class="btnClass('novo')">
+                Nova venda
+            </button>
+
+            <button @click="abaSelecionada = 'lista'" :class="btnClass('lista')">
+                Vendas cadastradas
+            </button>
+        </div>
+
+        <!-- FORM -->
+        <div v-if="abaSelecionada === 'novo'" class="bg-white border border-gray-200 rounded-xl shadow-sm">
+
+            <div class="px-4 py-3 border-b bg-gray-50 rounded-t-xl">
+                <h3 class="font-semibold text-gray-700">
+                    {{ modoEdicao ? 'Editar venda' : 'Nova venda' }}
+                </h3>
+            </div>
+
+            <div class="p-4 space-y-6">
+
+                <!-- Cliente + Data -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                    <div>
+                        <label class="text-sm text-gray-600">Cliente *</label>
+                        <input type="text" v-model="form.nome_cliente" placeholder="Digite o nome do cliente"
+                            class="mt-1 w-full border rounded-lg px-3 py-2 text-sm" />
+                    </div>
+
+                    <div>
+                        <label class="text-sm text-gray-600">Data *</label>
+                        <input type="date" v-model="form.data_venda"
+                            class="mt-1 w-full border rounded-lg px-3 py-2 text-sm" />
+                    </div>
+
+                </div>
+
+                <!-- Produtos -->
+                <div class="space-y-4">
+
+                    <div class="flex justify-between items-center">
+                        <h4 class="font-semibold text-gray-700">Produtos</h4>
+                        <button @click="adicionarProduto" class="px-3 py-1 text-sm bg-black text-white rounded-lg">
+                            + Adicionar
+                        </button>
+                    </div>
+
+                    <!-- Cabeçalho -->
+                    <div class="hidden md:grid grid-cols-4 gap-3 text-sm text-gray-600 font-semibold text-center">
+                        <div>Produto</div>
+                        <div>Quantidade</div>
+                        <div>Preço</div>
+                        <div>Ação</div>
+                    </div>
+
+                    <!-- Linhas -->
+                    <div v-for="(item, index) in form.produtos" :key="index"
+                        class="grid grid-cols-1 md:grid-cols-4 gap-3 border p-3 rounded-lg items-center">
+
+                        <select v-model.number="item.nome_produto" @change="atualizarPreco(item)"
+                            class="border rounded-lg px-2 py-1 text-sm text-center">
+
+                            <option :value="null">Selecione</option>
+                            
+                            <option v-for="p in produtos" :key="p.id" :value="p.nome">
+                                {{ p.nome }} (Estoque: {{ p.estoque }})
+                            </option>
+                        </select>
+
+                        <input type="number" min="1" v-model.number="item.quantidade"
+                            class="border rounded-lg px-2 py-1 text-sm text-center" />
+
+                        <input type="number" step="0.01" v-model.number="item.preco"
+                            class="border rounded-lg px-2 py-1 text-sm text-center" />
+
+                        <div class="text-center">
+                            <button @click="removerProduto(index)" class="text-red-600 text-sm hover:underline">
+                                Remover
+                            </button>
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <!-- Total -->
+                <div class="text-right font-semibold text-lg">
+                    Total: R$ {{ valorTotal.toFixed(2) }}
+                </div>
+
+                <div v-if="mensagemErro"
+                    class="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded-lg text-sm">
+                    {{ mensagemErro }}
+                </div>
+
+                <button @click="salvar" class="px-4 py-2 bg-black text-white rounded-lg">
+                    {{ modoEdicao ? 'Atualizar venda' : 'Salvar venda' }}
+                </button>
+
+            </div>
+        </div>
+
+        <!-- LISTA -->
+        <div v-else class="bg-white border border-gray-200 rounded-xl shadow-sm">
+
+            <div class="px-4 py-3 border-b bg-gray-50 rounded-t-xl flex justify-between items-center">
+                <h3 class="font-semibold text-gray-700">Vendas cadastradas</h3>
+
+                <input v-model="busca" placeholder="Buscar cliente..."
+                    class="border rounded-lg px-3 py-1 text-sm w-72" />
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm text-center">
+                    <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
+                        <tr>
+                            <th class="px-4 py-3">Cliente</th>
+                            <th class="px-4 py-3">Data</th>
+                            <th class="px-4 py-3">Total</th>
+                            <th class="px-4 py-3">Ações</th>
+                        </tr>
+                    </thead>
+
+                    <tbody class="divide-y divide-gray-100">
+                        <tr v-for="v in dadosPaginados" :key="v.id" class="hover:bg-gray-50">
+                            <td class="px-4 py-3">{{ v.cliente?.nome }}</td>
+                            <td class="px-4 py-3">{{ v.data_venda }}</td>
+                            <td class="px-4 py-3">
+                                R$ {{ Number(v.valor_total).toFixed(2) }}
+                            </td>
+                            <td class="px-4 py-3">
+                                <button @click="abrirEdicao(v)" class="text-blue-600 hover:underline">
+                                    Editar
+                                </button>
+                                <button @click="excluir(v)" class="text-red-600 hover:underline ml-3">
+                                    Excluir
+                                </button>
+                            </td>
+                        </tr>
+
+                        <tr v-if="!dadosPaginados.length">
+                            <td colspan="4" class="px-4 py-6 text-gray-400">
+                                Nenhuma venda encontrada
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Paginação -->
+            <div class="flex items-center justify-between px-4 py-3 border-t bg-gray-50 rounded-b-xl">
+                <span class="text-sm text-gray-600">
+                    Página {{ paginaAtual }} de {{ totalPaginas }}
+                </span>
+
+                <div class="flex gap-1">
+                    <button @click="paginaAtual--" :disabled="paginaAtual === 1"
+                        class="px-3 py-1 border rounded-lg bg-white">
+                        Anterior
+                    </button>
+
+                    <button v-for="n in totalPaginas" :key="n" @click="paginaAtual = n"
+                        class="px-3 py-1 border rounded-lg" :class="{
+                            'bg-blue-600 text-white border-blue-600': paginaAtual === n,
+                            'bg-white hover:bg-gray-100': paginaAtual !== n
+                        }">
+                        {{ n }}
+                    </button>
+
+                    <button @click="paginaAtual++" :disabled="paginaAtual === totalPaginas"
+                        class="px-3 py-1 border rounded-lg bg-white">
+                        Próxima
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+</template>
