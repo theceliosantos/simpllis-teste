@@ -280,8 +280,8 @@ function buscarProduto(index, valor = '') {
 
   debounceTimeoutProduto = setTimeout(async () => {
 
-    const { data } = await axios.get('/api/produtos', {
-      params: { search: valor || null }
+    const { data } = await axios.get('/api/produtos/buscar', {
+      params: { search: valor }
     })
 
     produtosEncontrados.value[index] = data

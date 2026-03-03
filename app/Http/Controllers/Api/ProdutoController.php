@@ -139,7 +139,7 @@ class ProdutoController extends Controller
                 $q->where('nome', 'ilike', "%{$search}%");
             })
             ->orderBy('nome')
-            ->limit(15)
+            ->limit(10)
             ->get(['id', 'nome', 'estoque', 'preco_venda']);
     }
 }

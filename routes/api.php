@@ -62,12 +62,9 @@ Route::delete('/compras/{compra}', [CompraController::class, 'destroy']);
 
 // crud produtos
 
-Route::get('/produtos', [ProdutoController::class, 'index']);
-Route::post('/produtos', [ProdutoController::class, 'store']);
-Route::get('/produtos/{produto}', [ProdutoController::class, 'show']);
-Route::put('/produtos/{produto}', [ProdutoController::class, 'update']);
-Route::delete('/produtos/{produto}', [ProdutoController::class, 'destroy']);
-Route::get('/produtos', [ProdutoController::class, 'buscar']);
+Route::get('/produtos/buscar', [ProdutoController::class, 'buscar']);
+Route::apiResource('produtos', ProdutoController::class);
+
 
 // crud Vendas
 Route::get('/vendas', [VendaController::class, 'index']);
