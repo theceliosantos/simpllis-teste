@@ -67,6 +67,7 @@ Route::post('/produtos', [ProdutoController::class, 'store']);
 Route::get('/produtos/{produto}', [ProdutoController::class, 'show']);
 Route::put('/produtos/{produto}', [ProdutoController::class, 'update']);
 Route::delete('/produtos/{produto}', [ProdutoController::class, 'destroy']);
+Route::get('/produtos', [ProdutoController::class, 'buscar']);
 
 // crud Vendas
 Route::get('/vendas', [VendaController::class, 'index']);

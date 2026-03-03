@@ -129,4 +129,17 @@ class ProdutoController extends Controller
 
         return response()->noContent();
     }
+
+    public function buscar(Request $request)
+    {
+        $search = $request->query('search');
+
+        return Produto::where('ativo', true)
+            ->when($search, function ($q) use ($search) {
+                $q->where('nome', 'ilike', "%{$search}%");
+            })
+            ->orderBy('nome')
+            ->limit(15)
+            ->get(['id', 'nome', 'estoque', 'preco_venda']);
+    }
 }

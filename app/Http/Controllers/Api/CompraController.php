@@ -224,4 +224,6 @@ class CompraController extends Controller
             return response()->noContent();
         });
     }
+
+    
 }

@@ -5,7 +5,6 @@ import GrupoModal from '@/components/cadastros/modal/GrupoModal.vue'
 import MarcaModal from '@/components/cadastros/modal/MarcaModal.vue'
 
 const BASE_URL = '/api/produtos'
-
 const abaSelecionada = ref('lista')
 const carregando = ref(false)
 const produtos = ref([])
@@ -192,6 +191,15 @@ function selecionarMarca(m) {
   form.marca_id = m.id
   modalMarcaAberto.value = false
 }
+
+const limitarNome = (event) => {
+  const limite = 50
+  if (event.target.value.length > limite) {
+    event.target.value = event.target.value.slice(0, limite)
+    form.nome = event.target.value
+  }
+}
+
 </script>
 
 <template>
@@ -230,7 +238,7 @@ function selecionarMarca(m) {
           <!-- NOME -->
           <div class="md:col-span-2">
             <label class="text-sm text-gray-600">Nome *</label>
-            <input v-model="form.nome" class="w-full border rounded-lg px-3 py-2 text-sm" />
+            <input v-model="form.nome" class="w-full border rounded-lg px-3 py-2 text-sm" @input="limitarNome" />
           </div>
 
           <!-- GRUPO -->
@@ -349,6 +357,29 @@ function selecionarMarca(m) {
 
           </tbody>
         </table>
+      </div>
+      <!-- Paginação -->
+      <div class="flex items-center justify-between px-4 py-3 border-t bg-gray-50 rounded-b-xl">
+        <span class="text-sm text-gray-600">Página {{ paginaAtual }} de {{ totalPaginas }}</span>
+
+        <div class="flex gap-1">
+          <button @click="paginaAtual--" :disabled="paginaAtual === 1" class="px-3 py-1 border rounded-lg bg-white">
+            Anterior
+          </button>
+
+          <button v-for="n in totalPaginas" :key="n" @click="paginaAtual = n" class="px-3 py-1 border rounded-lg"
+            :class="{
+              'bg-blue-600 text-white border-blue-600': paginaAtual === n,
+              'bg-white hover:bg-gray-100': paginaAtual !== n
+            }">
+            {{ n }}
+          </button>
+
+          <button @click="paginaAtual++" :disabled="paginaAtual === totalPaginas"
+            class="px-3 py-1 border rounded-lg bg-white">
+            Próxima
+          </button>
+        </div>
       </div>
     </div>
 

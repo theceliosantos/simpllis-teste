@@ -54,7 +54,7 @@ async function criarOuSelecionar() {
     selecionar(data)
 
   } catch (err) {
-    mensagemErro.value = 'Erro ao criar produto.'
+    mensagemErro.value = 'Produto não existe.'
   } finally {
     criando.value = false
   }
@@ -87,12 +87,12 @@ watch(() => props.aberto, (val) => {
       </button>
 
       <h3 class="text-lg font-semibold pr-8">
-        Selecionar ou Criar Produto
+        Selecionar Produto
       </h3>
 
       <input
         v-model="inputNome"
-        placeholder="Digite para pesquisar ou criar..."
+        placeholder="Digite para pesquisar"
         class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
         @keyup.enter="criarOuSelecionar"
       />

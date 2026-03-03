@@ -6,7 +6,6 @@ import ClienteModal from './modal/ClienteModal.vue'
 const BASE_URL = '/api/vendas'
 const abaSelecionada = ref('lista')
 const vendas = ref([])
-const produtos = ref([])
 const pessoas = ref([])
 const busca = ref('')
 const paginaAtual = ref(1)
@@ -14,6 +13,9 @@ const itensPorPagina = 10
 const mensagemErro = ref('')
 const modalPessoaAberto = ref(false)
 const confirmandoId = ref(null)
+const buscaProduto = ref({})
+const produtosEncontrados = ref({})
+let debounceTimeoutProduto = null
 
 const form = reactive({
   id: null,
@@ -34,13 +36,8 @@ function dataHoje() {
 }
 
 async function carregarVendasEProdutos() {
-  const [v, p] = await Promise.all([
-    axios.get(BASE_URL),
-    axios.get('/api/produtos')
-  ])
-
-  vendas.value = v.data
-  produtos.value = p.data
+  const { data } = await axios.get(BASE_URL)
+  vendas.value = data
 }
 
 async function carregarPessoas() {
@@ -71,6 +68,8 @@ function resetForm() {
   form.cliente_nome = ''
   form.data_venda = dataHoje()
   form.produtos = []
+  buscaProduto.value = {}
+  produtosEncontrados.value = {}
   adicionarProduto()
   mensagemErro.value = ''
 }
@@ -79,15 +78,6 @@ const valorTotal = computed(() =>
   form.produtos.reduce((t, i) => t + (Number(i.quantidade) * Number(i.preco)), 0)
 )
 
-function atualizarPreco(item) {
-  const produtoSelecionado = produtos.value.find(p => p.id === item.produto_id)
-
-  if (produtoSelecionado) {
-    item.preco = Number(produtoSelecionado.preco_venda ?? 0)
-  } else {
-    item.preco = 0
-  }
-}
 
 function selecionarPessoa(pessoa) {
   form.cliente_id = pessoa.id
@@ -195,12 +185,16 @@ function abrirEdicao(v) {
   form.cliente_nome = v.cliente?.nome ?? ''
   form.data_venda = v.data_venda
 
-  // v.produtos vem com {id, nome, pivot: {quantidade, preco}}
-  form.produtos = v.produtos.map(p => ({
-    produto_id: p.id,
-    quantidade: Number(p.pivot?.quantidade ?? 1),
-    preco: Number(p.pivot?.preco ?? 0)
-  }))
+  form.produtos = v.produtos.map((p, index) => {
+
+    buscaProduto.value[index] = p.nome
+
+    return {
+      produto_id: p.id,
+      quantidade: Number(p.pivot?.quantidade ?? 1),
+      preco: Number(p.pivot?.preco ?? 0)
+    }
+  })
 
   abaSelecionada.value = 'novo'
 }
@@ -269,6 +263,41 @@ const formatarDataBR = (data) => {
   if (!data) return ''
 
   return new Date(data).toLocaleDateString('pt-BR')
+}
+
+const formatarmoedaBR = (valor) => {
+  if (valor === null || valor === undefined) return ''
+
+  return Number(valor).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL'
+  })
+}
+
+function buscarProduto(index, valor = '') {
+
+  if (debounceTimeoutProduto) clearTimeout(debounceTimeoutProduto)
+
+  debounceTimeoutProduto = setTimeout(async () => {
+
+    const { data } = await axios.get('/api/produtos', {
+      params: { search: valor || null }
+    })
+
+    produtosEncontrados.value[index] = data
+
+  })
+}
+
+function selecionarProduto(index, produto) {
+
+  const item = form.produtos[index]
+
+  item.produto_id = produto.id
+  item.preco = Number(produto.preco_venda ?? 0)
+
+  buscaProduto.value[index] = produto.nome
+  produtosEncontrados.value[index] = []
 }
 
 </script>
@@ -345,17 +374,33 @@ const formatarDataBR = (data) => {
             :key="index"
             class="grid grid-cols-1 md:grid-cols-4 gap-3 border p-3 rounded-lg items-center"
           >
-            <select
-              v-model="item.produto_id"
-              @change="atualizarPreco(item)"
-              class="border rounded-lg px-2 py-1 text-sm text-center"
-            >
-              <option :value="null">Selecione</option>
+            <div class="relative">
 
-              <option v-for="p in produtos" :key="p.id" :value="p.id">
-                {{ p.nome }} (Estoque: {{ p.estoque }})
-              </option>
-            </select>
+              <input
+                :value="buscaProduto[index] || ''"
+                @input="(e) => {
+                  buscaProduto[index] = e.target.value
+                  buscarProduto(index, e.target.value)
+                }"
+                placeholder="Buscar Produto"
+                class="border rounded-lg px-2 py-1 text-sm text-center w-full"
+              />
+
+              <div
+                v-if="produtosEncontrados[index]?.length"
+                class="absolute z-20 w-full bg-white border rounded-lg mt-1 max-h-48 overflow-y-auto shadow"
+              >
+                <div
+                  v-for="p in produtosEncontrados[index]"
+                  :key="p.id"
+                  @click="selecionarProduto(index, p)"
+                  class="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                >
+                  {{ p.nome }} (Estoque: {{ p.estoque }})
+                </div>
+              </div>
+
+            </div>
 
             <input
                 :value="item.quantidade"
@@ -381,7 +426,7 @@ const formatarDataBR = (data) => {
 
         <!-- Total -->
         <div class="text-right font-semibold text-lg">
-          Total: R$ {{ valorTotal.toFixed(2) }}
+          Total: {{ formatarmoedaBR(valorTotal) }}
         </div>
 
         <div v-if="mensagemErro" class="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded-lg text-sm">
@@ -403,7 +448,7 @@ const formatarDataBR = (data) => {
       </div>
 
       <div class="overflow-x-auto">
-        <table class="w-full text-sm text-center">
+        <table class="w-full text-sm text-left">
           <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
             <tr>
               <th class="px-4 py-3">Cliente</th>
@@ -417,7 +462,7 @@ const formatarDataBR = (data) => {
             <tr v-for="v in dadosPaginados" :key="v.id" class="hover:bg-gray-50">
               <td class="px-4 py-3">{{ v.cliente?.nome }}</td>
               <td class="px-4 py-3">{{ formatarDataBR(v.data_venda) }}</td>
-              <td class="px-4 py-3">R$ {{ Number(v.valor_total).toFixed(2) }}</td>
+              <td class="px-4 py-3"> {{ formatarmoedaBR(v.valor_total) }}</td>
               <td class="px-4 py-3">
                 <button @click="abrirEdicao(v)" class="text-blue-600 hover:underline">Editar</button>
                 <button

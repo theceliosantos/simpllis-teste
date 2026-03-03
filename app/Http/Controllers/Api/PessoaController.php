@@ -58,11 +58,19 @@ class PessoaController extends Controller
         $pessoa->delete();
         return response()->noContent();
     }
-    public function fornecedores()
+
+    public function fornecedores(Request $request)
     {
+        $search = $request->query('search');
+
         return Pessoa::where('tipo', 'fornecedor')
             ->where('ativo', true)
+            ->when($search, function ($q) use ($search) {
+                $q->where('nome', 'ilike', "%{$search}%"); 
+            })
             ->orderBy('nome')
-            ->get(['id', 'nome', 'email', 'telefone', 'ativo']);
+            ->limit(15)
+            ->get(['id', 'nome']);
     }
+    
 }

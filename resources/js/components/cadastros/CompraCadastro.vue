@@ -6,7 +6,6 @@ import ProdutoModal from '@/components/cadastros/modal/ProdutoModal.vue'
 const BASE_URL = '/api/compras'
 const abaSelecionada = ref('lista')
 const compras = ref([])
-const fornecedores = ref([])
 const carregando = ref(false)
 const busca = ref('')
 const paginaAtual = ref(1)
@@ -16,6 +15,11 @@ const confirmandoId = ref(null)
 const modalProdutoAberto = ref(false)
 const produtosDisponiveis = ref([])
 const produtoIndexAtual = ref(null)
+const buscaFornecedor = ref('')
+const fornecedoresEncontrados = ref([])
+const loadingFornecedor = ref(false)
+
+let debounceTimeout = null
 
 const form = reactive({
     id: null,
@@ -39,7 +43,6 @@ async function carregarDados() {
     try {
         const [c, f] = await Promise.all([
             axios.get(BASE_URL),
-            axios.get('/api/fornecedores')
         ])
 
         compras.value = c.data
@@ -161,6 +164,8 @@ function abrirEdicao(c) {
     form.id = c.id
     form.fornecedor_id = c.fornecedor_id
     form.data_compra = c.data_compra
+
+    buscaFornecedor.value = c.fornecedor?.nome ?? ''
 
     form.produtos = c.produtos.map(p => {
 
@@ -292,6 +297,33 @@ const formatarDataBR = (data) => {
   return new Date(data).toLocaleDateString('pt-BR')
 }
 
+watch(buscaFornecedor, (valor) => {
+
+    if (debounceTimeout) clearTimeout(debounceTimeout)
+
+    if (!valor || valor.length < 2) {
+        fornecedoresEncontrados.value = []
+        return
+    }
+
+    debounceTimeout = setTimeout(async () => {
+
+        loadingFornecedor.value = true
+
+        try {
+            const { data } = await axios.get('/api/fornecedores', {
+                params: { search: valor }
+            })
+
+            fornecedoresEncontrados.value = data
+
+        } finally {
+            loadingFornecedor.value = false
+        }
+
+    }, 300)
+})
+
 </script>
 
 <template>
@@ -321,17 +353,34 @@ const formatarDataBR = (data) => {
 
             <div class="p-4 space-y-6">
 
-                <!-- Fornecedor + Data -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-                    <div>
+                    <div class="relative">
                         <label class="text-sm text-gray-600">Fornecedor *</label>
-                        <select v-model="form.fornecedor_id" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm">
-                            <option value="">Selecione</option>
-                            <option v-for="f in fornecedores" :key="f.id" :value="f.id">
+
+                        <input
+                            v-model="buscaFornecedor"
+                            placeholder="Digite para buscar fornecedor"
+                            class="mt-1 w-full border rounded-lg px-3 py-2 text-sm"
+                        />
+
+                        <div
+                            v-if="fornecedoresEncontrados.length"
+                            class="absolute z-20 w-full bg-white border rounded-lg mt-1 max-h-48 overflow-y-auto shadow"
+                        >
+                            <div
+                                v-for="f in fornecedoresEncontrados"
+                                :key="f.id"
+                                @click="
+                                    form.fornecedor_id = f.id;
+                                    buscaFornecedor = f.nome;
+                                    fornecedoresEncontrados = []
+                                "
+                                class="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                            >
                                 {{ f.nome }}
-                            </option>
-                        </select>
+                            </div>
+                        </div>
                     </div>
 
                     <div>
@@ -342,7 +391,6 @@ const formatarDataBR = (data) => {
 
                 </div>
 
-                <!-- Produtos -->
                 <div class="space-y-4">
 
                     <div class="flex justify-between items-center">
@@ -352,20 +400,30 @@ const formatarDataBR = (data) => {
                         </button>
                     </div>
 
-                    <!-- Linhas -->
                     <div v-for="(item, index) in form.produtos" :key="index"
                         class="border rounded-xl p-4 space-y-3 bg-gray-50">
 
                         <!-- Linha 1 -->
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
 
-                            <div @click="abrirModalProduto(index)" class="w-full border rounded-lg px-3 py-2 text-sm ">
-                                {{ item.nome_produto || 'Selecione um produto' }}
+                        <!-- Produto -->
+                            <div>
+                                <label class="text-xs text-gray-500">Produto</label>
+                                <div 
+                                    @click="abrirModalProduto(index)" 
+                                    class="w-full h-10 flex items-center border rounded-lg px-3 text-sm cursor-pointer"
+                                >
+                                    {{ item.nome_produto  }}
+                                </div>
                             </div>
 
+                            <!-- Marca -->
                             <div>
                                 <label class="text-xs text-gray-500">Marca</label>
-                                <input v-model="item.marca_nome" class="w-full border rounded-lg px-3 py-2 text-sm" />
+                                <input 
+                                    v-model="item.marca_nome" readonly
+                                    class="w-full h-10 border rounded-lg px-3 text-sm"
+                                />
                             </div>
 
                         </div>
@@ -375,7 +433,7 @@ const formatarDataBR = (data) => {
 
                             <div>
                                 <label class="text-xs text-gray-500">Grupo</label>
-                                <input v-model="item.grupo_nome" class="w-full border rounded-lg px-3 py-2 text-sm" />
+                                <input v-model="item.grupo_nome" readonly class="w-full border rounded-lg px-3 py-2 text-sm" />
                             </div>
 
                             <div>
