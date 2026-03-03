@@ -12,14 +12,6 @@ return new class extends Migration
     public function up(): void
     {
         DB::statement('CREATE EXTENSION IF NOT EXISTS citext');
-
-        Schema::create('marcas', function (Blueprint $table) {
-            $table->id();
-            $table->string('nome')->unique();
-            $table->boolean('ativo')->default(true);
-            $table->timestamps();
-        });
-         DB::statement('ALTER TABLE marcas ALTER COLUMN nome TYPE CITEXT');
     }
 
     /**
@@ -27,6 +19,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('marcas');
+        DB::statement('DROP EXTENSION IF EXISTS citext');
     }
 };

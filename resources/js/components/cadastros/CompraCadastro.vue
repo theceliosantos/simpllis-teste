@@ -1,6 +1,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import axios from 'axios'
+import ProdutoModal from '@/components/cadastros/modal/ProdutoModal.vue'
 
 const BASE_URL = '/api/compras'
 const abaSelecionada = ref('lista')
@@ -11,6 +12,10 @@ const busca = ref('')
 const paginaAtual = ref(1)
 const itensPorPagina = 10
 const mensagemErro = ref('')
+const confirmandoId = ref(null)
+const modalProdutoAberto = ref(false)
+const produtosDisponiveis = ref([])
+const produtoIndexAtual = ref(null)
 
 const form = reactive({
     id: null,
@@ -53,12 +58,17 @@ onMounted(() => {
 
 function adicionarProduto() {
     form.produtos.push({
+        produto_id: null,
         nome_produto: '',
-        marca: '',
-        grupo: '',
+        marca_id: null,
+        marca_nome: '',
+        grupo_id: null,
+        grupo_nome: '',
         quantidade: 1,
         preco_compra: 0,
-        preco_venda: 0
+        preco_compra_formatado: '',
+        preco_venda: 0,
+        preco_venda_formatado: ''
     })
 }
 
@@ -94,13 +104,14 @@ async function salvar() {
         fornecedor_id: form.fornecedor_id,
         data_compra: form.data_compra,
         produtos: form.produtos.map(p => ({
+            produto_id: p.produto_id || null,
             nome_produto: p.nome_produto,
-            marca: p.marca,
-            grupo: p.grupo,
-            quantidade: p.quantidade,
-            preco_compra: p.preco_compra,
-            preco_venda: p.preco_venda
-        }))
+            marca_nome: p.marca_nome || null,
+            grupo_nome: p.grupo_nome || null,
+            quantidade: Number(p.quantidade),
+            preco_compra: parseFloat(String(p.preco_compra).replace(',', '.')) || 0,
+            preco_venda: parseFloat(String(p.preco_venda).replace(',', '.')) || 0,
+        })),
     }
 
     try {
@@ -120,11 +131,30 @@ async function salvar() {
     }
 }
 
-async function excluir(c) {
-    if (!confirm('Excluir compra?')) return
-    await axios.delete(`${BASE_URL}/${c.id}`)
-    await carregarDados()
+const excluir = async (p) => {
+
+    if (confirmandoId.value !== p.id) {
+        confirmandoId.value = p.id
+        return
+    }
+
+    try {
+        await axios.delete(`${BASE_URL}/${p.id}`)
+        confirmandoId.value = null
+        await carregarDados()
+    } catch (err) {
+        mensagemErro.value = 'Erro ao excluir compra.'
+        setTimeout(() => mensagemErro.value = '', 3000)
+    }
 }
+
+watch(confirmandoId, (val) => {
+    if (val) {
+        setTimeout(() => {
+            confirmandoId.value = null
+        }, 3000)
+    }
+})
 
 function abrirEdicao(c) {
 
@@ -132,14 +162,36 @@ function abrirEdicao(c) {
     form.fornecedor_id = c.fornecedor_id
     form.data_compra = c.data_compra
 
-    form.produtos = c.produtos.map(p => ({
-        nome_produto: p.nome,
-        marca: p.marca?.nome ?? '',
-        grupo: p.grupo?.nome ?? '',
-        quantidade: p.pivot.quantidade,
-        preco_compra: p.pivot.preco,
-        preco_venda: p.preco_venda
-    }))
+    form.produtos = c.produtos.map(p => {
+
+        const precoCompra = Number(p.pivot.preco ?? 0)
+        const precoVenda  = Number(p.preco_venda ?? 0)
+
+        return {
+            produto_id: p.id,
+            nome_produto: p.nome,
+
+            marca_id: p.marca?.id ?? null,
+            marca_nome: p.marca?.nome ?? '',
+
+            grupo_id: p.grupo?.id ?? null,
+            grupo_nome: p.grupo?.nome ?? '',
+
+            quantidade: Number(p.pivot.quantidade),
+
+            preco_compra: precoCompra,
+            preco_compra_formatado: precoCompra.toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+            }),
+
+            preco_venda: precoVenda,
+            preco_venda_formatado: precoVenda.toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+            }),
+        }
+    })
 
     abaSelecionada.value = 'novo'
 }
@@ -181,6 +233,65 @@ function btnClass(tipo) {
             : 'bg-white hover:bg-gray-100'
     ]
 }
+
+async function abrirModalProduto(index) {
+    produtoIndexAtual.value = index
+    modalProdutoAberto.value = true
+
+    const { data } = await axios.get('/api/produtos')
+    produtosDisponiveis.value = data
+}
+function selecionarProduto(produto) {
+
+    if (produtoIndexAtual.value === null) return
+
+    const item = form.produtos[produtoIndexAtual.value]
+
+    item.produto_id = produto.id
+    item.nome_produto = produto.nome
+
+    item.marca_id = produto.marca?.id ?? null
+    item.marca_nome = produto.marca?.nome ?? ''
+
+    item.grupo_id = produto.grupo?.id ?? null
+    item.grupo_nome = produto.grupo?.nome ?? ''
+
+    item.preco_compra = Number(produto.preco_compra ?? 0)
+    item.preco_compra_formatado = item.preco_compra.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+    item.preco_venda = Number(produto.preco_venda ?? 0)
+    item.preco_venda_formatado = item.preco_venda.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+    modalProdutoAberto.value = false
+    produtoIndexAtual.value = null
+}
+
+const limitarDigitos = (event) => {
+    if (event.target.value.length > 5) {
+        event.target.value = event.target.value.slice(0, 5);
+        codigo.value = event.target.value;
+    }
+};
+const limitarPreco = (event, item, campo) => {
+    const raw = String(event.target.value ?? '').replace(/\D/g, '').slice(0, 8) 
+
+    const numero = raw ? Number(raw) / 100 : 0
+
+    item[campo] = numero
+    item[`${campo}_formatado`] = numero.toLocaleString('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+    })
+
+    event.target.value = item[`${campo}_formatado`]
+}
+
+const formatarDataBR = (data) => {
+  if (!data) return ''
+
+  return new Date(data).toLocaleDateString('pt-BR')
+}
+
 </script>
 
 <template>
@@ -248,14 +359,13 @@ function btnClass(tipo) {
                         <!-- Linha 1 -->
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
 
-                            <div>
-                                <label class="text-xs text-gray-500">Nome do Produto</label>
-                                <input v-model="item.nome_produto" class="w-full border rounded-lg px-3 py-2 text-sm" />
+                            <div @click="abrirModalProduto(index)" class="w-full border rounded-lg px-3 py-2 text-sm ">
+                                {{ item.nome_produto || 'Selecione um produto' }}
                             </div>
 
                             <div>
                                 <label class="text-xs text-gray-500">Marca</label>
-                                <input v-model="item.marca" class="w-full border rounded-lg px-3 py-2 text-sm" />
+                                <input v-model="item.marca_nome" class="w-full border rounded-lg px-3 py-2 text-sm" />
                             </div>
 
                         </div>
@@ -265,18 +375,19 @@ function btnClass(tipo) {
 
                             <div>
                                 <label class="text-xs text-gray-500">Grupo</label>
-                                <input v-model="item.grupo" class="w-full border rounded-lg px-3 py-2 text-sm" />
+                                <input v-model="item.grupo_nome" class="w-full border rounded-lg px-3 py-2 text-sm" />
                             </div>
 
                             <div>
                                 <label class="text-xs text-gray-500">Quantidade</label>
-                                <input type="number" v-model.number="item.quantidade" min="1"
+                                <input type="number" v-model="item.quantidade" min="1" @input="limitarDigitos"
                                     class="w-full border rounded-lg px-3 py-2 text-sm" />
                             </div>
 
                             <div>
                                 <label class="text-xs text-gray-500">Preço Compra</label>
-                                <input type="number" step="0.01" v-model.number="item.preco_compra"
+                                <input type="text" :value="item.preco_compra_formatado"
+                                    @input="(e) => limitarPreco(e, item, 'preco_compra')" maxlength="12"
                                     class="w-full border rounded-lg px-3 py-2 text-sm" />
                             </div>
 
@@ -287,7 +398,8 @@ function btnClass(tipo) {
 
                             <div>
                                 <label class="text-xs text-gray-500">Preço Venda</label>
-                                <input type="number" step="0.01" v-model.number="item.preco_venda"
+                                <input type="text" :value="item.preco_venda_formatado"
+                                    @input="(e) => limitarPreco(e, item, 'preco_venda')" maxlength="12"
                                     class="w-full border rounded-lg px-3 py-2 text-sm" />
                             </div>
 
@@ -331,8 +443,8 @@ function btnClass(tipo) {
             </div>
 
             <div class="overflow-x-auto">
-                <table class="w-full text-sm text-center">
-                    <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
+                <table class="w-full ">
+                    <thead class="bg-gray-100 text-gray-600 uppercase text-xs text-left ">
                         <tr>
                             <th class="px-4 py-3">Fornecedor</th>
                             <th class="px-4 py-3">Data</th>
@@ -345,7 +457,7 @@ function btnClass(tipo) {
                         <tr v-for="c in dadosPaginados" :key="c.id" class="hover:bg-gray-50">
 
                             <td class="px-4 py-3">{{ c.fornecedor?.nome }}</td>
-                            <td class="px-4 py-3">{{ c.data_compra }}</td>
+                            <td class="px-4 py-3">{{ formatarDataBR(c.data_compra) }}</td>
                             <td class="px-4 py-3">
                                 R$ {{ Number(c.valor_total).toFixed(2) }}
                             </td>
@@ -354,9 +466,11 @@ function btnClass(tipo) {
                                     Editar
                                 </button>
 
-                                <button @click="excluir(c)" class="text-red-600 hover:underline">
-                                    Excluir
+                                <button @click="excluir(c)" class="ml-3 hover:underline"
+                                    :class="confirmandoId === c.id ? 'text-red-600' : 'text-red-600'">
+                                    {{ confirmandoId === c.id ? 'Confirma' : 'Excluir' }}
                                 </button>
+
                             </td>
 
                         </tr>
@@ -398,4 +512,7 @@ function btnClass(tipo) {
         </div>
 
     </div>
+    <ProdutoModal :aberto="modalProdutoAberto" :produtos="produtosDisponiveis" @fechar="modalProdutoAberto = false"
+        @selecionar="selecionarProduto" @atualizado="produtosDisponiveis.push($event)" />
+
 </template>

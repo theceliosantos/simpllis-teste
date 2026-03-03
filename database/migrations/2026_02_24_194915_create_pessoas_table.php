@@ -11,17 +11,22 @@ return new class extends Migration
      */
     public function up(): void
     {
+        DB::statement('CREATE EXTENSION IF NOT EXISTS citext');
+
         Schema::create('pessoas', function (Blueprint $table) {
             $table->id();
             $table->string('nome');
-            $table->string('email')->unique();
+            $table->string('email')->unique()->nullable();
             $table->string('telefone')->nullable();
             $table->char('sexo', 1)->nullable();
             $table->date('data_nascimento')->nullable();
             $table->enum('tipo', ['cliente', 'fornecedor', 'funcionario']);
             $table->boolean('ativo')->default(true);
             $table->timestamps();
+
         });
+
+        DB::statement('ALTER TABLE pessoas ALTER COLUMN nome TYPE CITEXT');
     }
 
     /**

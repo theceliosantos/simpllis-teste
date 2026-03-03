@@ -14,4 +14,11 @@ class Marca extends Model
     {
         return $this->hasMany(Produto::class);
     }
+
+    protected static function booted()
+    {
+        static::saving(function ($marca) {
+            $marca->nome = mb_convert_case($marca->nome, MB_CASE_TITLE, "UTF-8");
+        });
+    }
 }

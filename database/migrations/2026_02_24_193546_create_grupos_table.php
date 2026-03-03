@@ -11,12 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
+        DB::statement('CREATE EXTENSION IF NOT EXISTS citext');
+
         Schema::create('grupos', function (Blueprint $table) {
             $table->id();
             $table->string('nome')->unique();
             $table->boolean('ativo')->default(true);
             $table->timestamps();
         });
+         DB::statement('ALTER TABLE grupos ALTER COLUMN nome TYPE CITEXT');
     }
 
     /**

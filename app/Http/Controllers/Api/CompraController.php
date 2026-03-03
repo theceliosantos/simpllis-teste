@@ -21,18 +21,20 @@ class CompraController extends Controller
         );
     }
 
-    public function store(Request $request)
+   public function store(Request $request)
     {
         $data = $request->validate([
             'fornecedor_id' => 'required|exists:pessoas,id',
             'data_compra'   => 'required|date',
             'produtos'      => 'required|array|min:1',
-            'produtos.*.nome_produto' => 'required|string|max:255',
+
+            'produtos.*.produto_id'   => 'nullable|exists:produtos,id',
+            'produtos.*.nome_produto' => 'required_without:produtos.*.produto_id|string|max:255',
+            'produtos.*.marca_nome'   => 'nullable|string|max:255',
+            'produtos.*.grupo_nome'   => 'nullable|string|max:255',
             'produtos.*.quantidade'   => 'required|integer|min:1',
-            'produtos.*.marca'         => 'nullable|string|max:255',
-            'produtos.*.grupo'         => 'nullable|string|max:255',
-            'produtos.*.preco_compra'  => 'required|numeric|min:0',
-            'produtos.*.preco_venda'   => 'required|numeric|min:0',
+            'produtos.*.preco_compra' => 'required|numeric|min:0',
+            'produtos.*.preco_venda'  => 'required|numeric|min:0',
         ]);
 
         return DB::transaction(function () use ($data) {
@@ -47,35 +49,35 @@ class CompraController extends Controller
 
             foreach ($data['produtos'] as $item) {
 
-                $nomeProduto = trim($item['nome_produto']);
+                if (!empty($item['produto_id'])) {
 
-                $grupo = Grupo::firstOrCreate([
-                    'nome' => $item['grupo'] ?? 'Sem Grupo'
-                ]);
-
-                $marca = Marca::firstOrCreate([
-                    'nome' => $item['marca'] ?? 'Sem Marca'
-                ]);
-
-                $produto = Produto::whereRaw(
-                    'LOWER(nome) = ?',
-                    [strtolower($nomeProduto)]
-                )->first();
-
-                if (!$produto) {
-
-                    $produto = Produto::create([
-                        'nome'         => $nomeProduto,
-                        'grupo_id'     => $grupo->id,
-                        'marca_id'     => $marca->id,
-                        'preco_compra' => $item['preco_compra'],
-                        'preco_venda'  => $item['preco_venda'],
-                        'estoque'      => 0,
-                        'ativo'        => true
-                    ]);
+                    $produto = Produto::findOrFail($item['produto_id']);
 
                 } else {
 
+                    $nome = ucfirst(strtolower(trim($item['nome_produto'])));
+
+                    $grupo = Grupo::firstOrCreate([
+                        'nome' => $item['grupo_nome'] ?? 'Sem Grupo'
+                    ]);
+
+                    $marca = Marca::firstOrCreate([
+                        'nome' => $item['marca_nome'] ?? 'Sem Marca'
+                    ]);
+
+                    $produto = Produto::firstOrCreate(
+                        ['nome' => $nome],
+                        [
+                            'grupo_id'     => $grupo->id,
+                            'marca_id'     => $marca->id,
+                            'preco_compra' => $item['preco_compra'],
+                            'preco_venda'  => $item['preco_venda'],
+                            'estoque'      => 0,
+                            'ativo'        => true
+                        ]
+                    );
+
+                    // Atualiza dados caso já existisse
                     $produto->update([
                         'grupo_id'     => $grupo->id,
                         'marca_id'     => $marca->id,
@@ -108,7 +110,7 @@ class CompraController extends Controller
     public function show(Compra $compra)
     {
         return response()->json(
-            $compra->load(['fornecedor:id,nome', 'produtos'])
+            $compra->load(['fornecedor:id,nome', 'produtos.marca', 'produtos.grupo'])
         );
     }
 
@@ -118,9 +120,11 @@ class CompraController extends Controller
             'fornecedor_id' => 'required|exists:pessoas,id',
             'data_compra'   => 'required|date',
             'produtos'      => 'required|array|min:1',
-            'produtos.*.nome_produto' => 'required|string|max:255',
-            'produtos.*.marca'        => 'nullable|string|max:255',
-            'produtos.*.grupo'        => 'nullable|string|max:255',
+
+            'produtos.*.produto_id'   => 'nullable|exists:produtos,id',
+            'produtos.*.nome_produto' => 'required_without:produtos.*.produto_id|string|max:255',
+            'produtos.*.marca_nome'   => 'nullable|string|max:255',
+            'produtos.*.grupo_nome'   => 'nullable|string|max:255',
             'produtos.*.quantidade'   => 'required|integer|min:1',
             'produtos.*.preco_compra' => 'required|numeric|min:0',
             'produtos.*.preco_venda'  => 'required|numeric|min:0',
@@ -129,8 +133,12 @@ class CompraController extends Controller
         return DB::transaction(function () use ($data, $compra) {
 
             $compra->load('produtos');
+
             foreach ($compra->produtos as $produtoAntigo) {
-                $produtoAntigo->decrement('estoque', (int) $produtoAntigo->pivot->quantidade);
+                $produtoAntigo->decrement(
+                    'estoque',
+                    (int) $produtoAntigo->pivot->quantidade
+                );
             }
 
             $compra->update([
@@ -139,59 +147,52 @@ class CompraController extends Controller
             ]);
 
             $valorTotal = 0;
-
             $sync = [];
 
             foreach ($data['produtos'] as $item) {
 
-                $nomeProduto = trim($item['nome_produto']);
+                $precoCompra = (float) str_replace(',', '.', $item['preco_compra']);
+                $precoVenda  = (float) str_replace(',', '.', $item['preco_venda']);
+                $quantidade  = (int) $item['quantidade'];
 
-                $grupo = Grupo::firstOrCreate([
-                    'nome' => $item['grupo'] ?? 'Sem Grupo'
-                ]);
+                if (!empty($item['produto_id'])) {
 
-                $marca = Marca::firstOrCreate([
-                    'nome' => $item['marca'] ?? 'Sem Marca'
-                ]);
+                    $produto = Produto::findOrFail($item['produto_id']);
 
-                $produto = Produto::whereRaw(
-                    'LOWER(nome) = ?',
-                    [strtolower($nomeProduto)]
-                )->first();
-
-                
-                if (!$produto) {
-
-                    $grupo = Grupo::firstOrCreate(['nome' => 'Sem Grupo']);
-                    $marca = Marca::firstOrCreate(['nome' => 'Sem Marca']);
-
-                    $produto = Produto::create([
-                        'nome'         => $nomeProduto,
-                        'grupo_id'     => $grupo->id,
-                        'marca_id'     => $marca->id,
-                        'preco_compra' => $item['preco_compra'],
-                        'preco_venda'  => $item['preco_venda'],
-                        'estoque'      => 0,
-                        'ativo'        => true
+                    $produto->update([
+                        'preco_compra' => $precoCompra,
+                        'preco_venda'  => $precoVenda,
                     ]);
 
                 } else {
-                    $produto->update([
+
+                    $grupo = Grupo::firstOrCreate([
+                        'nome' => $item['grupo_nome'] ?? 'Sem Grupo'
+                    ]);
+
+                    $marca = Marca::firstOrCreate([
+                        'nome' => $item['marca_nome'] ?? 'Sem Marca'
+                    ]);
+
+                    $produto = Produto::create([
+                        'nome'         => trim($item['nome_produto']),
                         'grupo_id'     => $grupo->id,
                         'marca_id'     => $marca->id,
-                        'preco_compra' => $item['preco_compra'],
-                        'preco_venda'  => $item['preco_venda'],
+                        'preco_compra' => $precoCompra,
+                        'preco_venda'  => $precoVenda,
+                        'estoque'      => 0,
+                        'ativo'        => true
                     ]);
                 }
 
                 $sync[$produto->id] = [
-                    'quantidade' => (int) $item['quantidade'],
-                    'preco'      => (float) $item['preco_compra'],
+                    'quantidade' => $quantidade,
+                    'preco'      => $precoCompra,
                 ];
 
-                $produto->increment('estoque', (int) $item['quantidade']);
+                $produto->increment('estoque', $quantidade);
 
-                $valorTotal += ((int) $item['quantidade']) * ((float) $item['preco_compra']);
+                $valorTotal += $quantidade * $precoCompra;
             }
 
             $compra->produtos()->sync($sync);
@@ -201,12 +202,15 @@ class CompraController extends Controller
             ]);
 
             return response()->json(
-                $compra->load(['fornecedor:id,nome', 'produtos.marca', 'produtos.grupo']),
+                $compra->load([
+                    'fornecedor:id,nome',
+                    'produtos.marca',
+                    'produtos.grupo'
+                ]),
                 200
             );
         });
     }
-
     public function destroy(Compra $compra)
     {
         return DB::transaction(function () use ($compra) {

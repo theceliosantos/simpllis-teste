@@ -45,4 +45,10 @@ class Produto extends Model
     {
         return $this->belongsToMany(Venda::class,'celio.produto_venda','produto_id','venda_id')->withPivot('quantidade', 'preco');
     }
+    protected static function booted()
+    {
+        static::saving(function ($produto) {
+            $produto->nome = mb_convert_case($produto->nome, MB_CASE_TITLE, "UTF-8");
+        });
+    }
 }

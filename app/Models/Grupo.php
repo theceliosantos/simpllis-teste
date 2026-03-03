@@ -13,4 +13,11 @@ class Grupo extends Model
     {
         return $this->hasMany(Produto::class);
     }
+    
+    protected static function booted()
+    {
+        static::saving(function ($grupo) {
+            $grupo->nome = mb_convert_case($grupo->nome, MB_CASE_TITLE, "UTF-8");
+        });
+    }
 }

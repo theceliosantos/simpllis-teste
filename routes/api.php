@@ -39,8 +39,9 @@ Route::prefix('relatorios')->group(function () {
     
 });
 
-Route::get('/grupos', [GrupoController::class, 'index']);
-Route::get('/marcas', [MarcaController::class, 'index']);
+Route::apiResource('grupos', GrupoController::class);
+Route::apiResource('marcas', MarcaController::class);
+
 Route::get('/fornecedores', [PessoaController::class, 'fornecedores']);
 
 //Crud Pessoas

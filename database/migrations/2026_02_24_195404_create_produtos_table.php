@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
+        DB::statement('CREATE EXTENSION IF NOT EXISTS citext');
+
         Schema::create('produtos', function (Blueprint $table) {
             $table->id();
-             $table->string('nome');
+             $table->string('nome')->unique();
             $table->foreignId('grupo_id')->constrained()->cascadeOnDelete();
             $table->foreignId('marca_id')->constrained()->cascadeOnDelete();
             $table->decimal('preco_compra', 10, 2);
@@ -22,6 +24,8 @@ return new class extends Migration
             $table->boolean('ativo')->default(true);
             $table->timestamps();
         });
+
+         DB::statement('ALTER TABLE produtos ALTER COLUMN nome TYPE CITEXT');
     }
 
     /**

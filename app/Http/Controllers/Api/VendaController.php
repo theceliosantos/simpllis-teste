@@ -30,28 +30,18 @@ class VendaController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'nome_cliente' => 'required|string|max:255',
-            'data_venda'   => 'required|date',
-            'produtos'     => 'required|array|min:1',
-            'produtos.*.nome_produto' => 'required|string|max:255',
-            'produtos.*.quantidade'   => 'required|integer|min:1',
-            'produtos.*.preco'        => 'required|numeric|min:0'
+            'cliente_id' => 'required|exists:pessoas,id',
+            'data_venda' => 'required|date',
+            'produtos'   => 'required|array|min:1',
+            'produtos.*.produto_id' => 'required|exists:produtos,id',
+            'produtos.*.quantidade' => 'required|integer|min:1',
+            'produtos.*.preco'      => 'required|numeric|min:0',
         ]);
 
         return DB::transaction(function () use ($data) {
 
-            // Buscar ou criar cliente
-            $cliente = Pessoa::whereRaw(
-                'LOWER(nome) = ? AND tipo = ?',
-                [strtolower(trim($data['nome_cliente'])), 'cliente']
-            )->first();
-
-            if (!$cliente) {
-                abort(422, 'Cliente não cadastrado.');
-            }
-
             $venda = Venda::create([
-                'cliente_id' => $cliente->id,
+                'cliente_id' => $data['cliente_id'],
                 'data_venda' => $data['data_venda'],
                 'valor_total'=> 0
             ]);
@@ -60,22 +50,11 @@ class VendaController extends Controller
 
             foreach ($data['produtos'] as $item) {
 
-                $produto = Produto::whereRaw(
-                    'LOWER(nome) = ?',
-                    [strtolower(trim($item['nome_produto']))]
-                )->first();
-
-                if (!$produto) {
-                    abort(422, "Produto '{$item['nome_produto']}' não existe.");
-                }
+                $produto = Produto::findOrFail($item['produto_id']);
 
                 if ($produto->estoque < $item['quantidade']) {
                     abort(422, "Estoque insuficiente para '{$produto->nome}'.");
                 }
-
-                $produto->update([
-                    'preco_venda' => $item['preco']
-                ]);
 
                 $venda->produtos()->attach($produto->id, [
                     'quantidade' => $item['quantidade'],
@@ -101,74 +80,58 @@ class VendaController extends Controller
     public function update(Request $request, Venda $venda)
     {
         $data = $request->validate([
-            'nome_cliente' => 'required|string|max:255',
-            'data_venda'   => 'required|date',
-            'produtos'     => 'required|array|min:1',
-            'produtos.*.nome_produto' => 'required|string|max:255',
-            'produtos.*.quantidade'   => 'required|integer|min:1',
-            'produtos.*.preco'        => 'required|numeric|min:0'
+            'cliente_id' => 'required|exists:pessoas,id',
+            'data_venda' => 'required|date',
+            'produtos'   => 'required|array|min:1',
+            'produtos.*.produto_id' => 'required|exists:produtos,id',
+            'produtos.*.quantidade' => 'required|integer|min:1',
+            'produtos.*.preco'      => 'required|numeric|min:0',
         ]);
 
         return DB::transaction(function () use ($data, $venda) {
 
             $venda->load('produtos');
 
-            // Devolver estoque antigo
+            // Devolve estoque anterior
             foreach ($venda->produtos as $produtoAntigo) {
-                $produtoAntigo->increment('estoque', $produtoAntigo->pivot->quantidade);
+                $produtoAntigo->increment(
+                    'estoque',
+                    $produtoAntigo->pivot->quantidade
+                );
             }
 
-            $venda->produtos()->detach();
-
-            // Buscar ou criar cliente
-            $cliente = Pessoa::whereRaw(
-                'LOWER(nome) = ? AND tipo = ?',
-                [strtolower(trim($data['nome_cliente'])), 'cliente']
-            )->first();
-
-            if (!$cliente) {
-                abort(422, 'Cliente não cadastrado.');
-            }
-
+            $sync = [];
             $valorTotal = 0;
 
             foreach ($data['produtos'] as $item) {
 
-                $produto = Produto::whereRaw(
-                    'LOWER(nome) = ?',
-                    [strtolower(trim($item['nome_produto']))]
-                )->first();
-
-                if (!$produto) {
-                    abort(422, "Produto '{$item['nome_produto']}' não existe.");
-                }
+                $produto = Produto::findOrFail($item['produto_id']);
 
                 if ($produto->estoque < $item['quantidade']) {
                     abort(422, "Estoque insuficiente para '{$produto->nome}'.");
                 }
 
-                $produto->update([
-                    'preco_venda' => $item['preco']
-                ]);
-
-                $venda->produtos()->attach($produto->id, [
+                $sync[$produto->id] = [
                     'quantidade' => $item['quantidade'],
-                    'preco'      => $item['preco']
-                ]);
+                    'preco'      => $item['preco'],
+                ];
 
                 $produto->decrement('estoque', $item['quantidade']);
 
                 $valorTotal += $item['quantidade'] * $item['preco'];
             }
 
+            $venda->produtos()->sync($sync);
+
             $venda->update([
-                'cliente_id' => $cliente->id,
+                'cliente_id' => $data['cliente_id'],
                 'data_venda' => $data['data_venda'],
                 'valor_total'=> $valorTotal
             ]);
 
             return response()->json(
-                $venda->load(['cliente:id,nome','produtos'])
+                $venda->load(['cliente:id,nome', 'produtos']),
+                200
             );
         });
     }
@@ -176,6 +139,8 @@ class VendaController extends Controller
     public function destroy(Venda $venda)
     {
         return DB::transaction(function () use ($venda) {
+
+            $venda->load('produtos');
 
             foreach ($venda->produtos as $produto) {
                 $produto->increment('estoque', $produto->pivot->quantidade);

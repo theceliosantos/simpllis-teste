@@ -12,6 +12,7 @@ use App\Models\Marca;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rules\Email;
 
 class RelatorioController extends Controller
 {
@@ -25,15 +26,10 @@ class RelatorioController extends Controller
     {
         $tiposPermitidos = ['funcionario', 'cliente', 'fornecedor'];
 
-        $tipo = strtolower(trim($tipo));
+        abort_unless(in_array($tipo, $tiposPermitidos, true), 422);
 
-        abort_unless(
-            in_array($tipo, $tiposPermitidos, true),
-            422,
-            'Tipo inválido.'
-        );
-
-        return Pessoa::whereRaw('LOWER(tipo) = ?', [$tipo])
+        return Pessoa::where('tipo', $tipo)
+            ->select( 'nome', 'tipo','email','telefone', 'sexo',)
             ->orderBy('nome')
             ->get();
     }
@@ -57,12 +53,18 @@ class RelatorioController extends Controller
 
     public function pessoasPorIdade($idade)
     {
+        $idade = (int) $idade;
+
+        abort_unless($idade > 0 && $idade < 120, 422, 'Idade inválida.');
+
         return Pessoa::whereNotNull('data_nascimento')
-            ->get()
-            ->filter(function ($pessoa) use ($idade) {
-                return Carbon::parse($pessoa->data_nascimento)->age == $idade;
-            })
-            ->values();
+            ->whereBetween('data_nascimento', [
+                now()->subYears($idade + 1)->addDay()->toDateString(),
+                now()->subYears($idade)->toDateString()
+            ])
+            ->select('id', 'nome', 'data_nascimento')
+            ->orderBy('nome')
+            ->get();
     }
 
     public function produtosPorGrupo($grupoId)
@@ -108,8 +110,12 @@ class RelatorioController extends Controller
     {
         [$start, $end] = $this->periodo($request);
 
-        return Venda::whereBetween('data_venda', [$start->toDateString(), $end->toDateString()])
-            ->with(['cliente', 'produtos'])
+        return Venda::whereBetween('data_venda', [$start, $end])
+            ->with([
+                'cliente:id,nome',
+                'produtos:id,nome'
+            ])
+            ->select('id', 'cliente_id', 'data_venda', 'valor_total')
             ->orderBy('data_venda')
             ->orderByDesc('valor_total')
             ->get();
@@ -144,10 +150,14 @@ class RelatorioController extends Controller
             ->get();
     }
 
-    public function produtosSemVendas()
+   public function produtosSemVendas()
     {
         return Produto::doesntHave('vendas')
-            ->with(['grupo', 'marca'])
+            ->select('id', 'nome', 'grupo_id', 'marca_id')
+            ->with([
+                'grupo:id,nome',
+                'marca:id,nome'
+            ])
             ->orderBy('nome')
             ->get();
     }

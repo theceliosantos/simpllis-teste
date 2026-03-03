@@ -10,6 +10,7 @@ const busca = ref('')
 const paginaAtual = ref(1)
 const itensPorPagina = 10
 const mensagemErro = ref('')
+const confirmandoId = ref(null)
 
 const form = reactive({
     id: null,
@@ -155,16 +156,30 @@ const salvar = async () => {
 }
 
 const excluir = async (p) => {
-    if (!confirm(`Excluir "${p.nome}"?`)) return
+
+    if (confirmandoId.value !== p.id) {
+        confirmandoId.value = p.id
+        return
+    }
 
     try {
         await axios.delete(`${BASE_URL}/${p.id}`)
+        confirmandoId.value = null
         await carregar()
     } catch {
         mensagemErro.value = 'Erro ao excluir pessoa.'
         setTimeout(() => mensagemErro.value = '', 3000)
     }
 }
+
+watch(confirmandoId, (val) => {
+    if (val) {
+        setTimeout(() => {
+            confirmandoId.value = null
+        }, 3000)
+    }
+})
+
 </script>
 
 <template>
@@ -228,7 +243,7 @@ const excluir = async (p) => {
                     </div>
 
                     <div>
-                        <label class="text-sm text-gray-600">Email</label>
+                        <label class="text-sm text-gray-600 ">Email</label>
                         <input v-model="form.email"
                             type="email"
                             class="mt-1 w-full border rounded-lg px-3 py-2 text-sm" />
@@ -354,9 +369,12 @@ const excluir = async (p) => {
                                     Editar
                                 </button>
 
-                                <button class="text-red-600 hover:underline ml-3"
-                                    @click="excluir(p)">
-                                    Excluir
+                                <button
+                                    @click="excluir(p)"
+                                    class="ml-3 hover:underline"
+                                    :class="confirmandoId === p.id ? 'text-red-600' : 'text-red-600'"
+                                >
+                                    {{ confirmandoId === p.id ? 'Confirma' : 'Excluir' }}
                                 </button>
                             </td>
                         </tr>
