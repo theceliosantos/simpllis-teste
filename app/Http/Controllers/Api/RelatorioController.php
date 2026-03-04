@@ -162,51 +162,63 @@ class RelatorioController extends Controller
             ->get();
     }
 
-    
-
     public function mediaTempoVendaPorProduto()
     {
-        $primeiraCompra = DB::table('compra_produto')
-            ->join('compras', 'compras.id', '=', 'compra_produto.compra_id')
-            ->select(
-                'compra_produto.produto_id',
-                DB::raw('MIN(compras.data_compra) as primeira_compra')
+        $resultado = DB::select("
+            WITH compras AS (
+                SELECT
+                    cp.compra_id,
+                    cp.produto_id,
+                    c.data_compra,
+                    cp.quantidade,
+                    SUM(cp.quantidade)
+                        OVER (PARTITION BY cp.produto_id ORDER BY c.data_compra)
+                        AS saldo_compra
+                FROM compra_produto cp
+                JOIN compras c ON c.id = cp.compra_id
+            ),
+            vendas AS (
+                SELECT
+                    pv.produto_id,
+                    v.data_venda,
+                    pv.quantidade,
+                    SUM(pv.quantidade)
+                        OVER (PARTITION BY pv.produto_id ORDER BY v.data_venda)
+                        AS saldo_venda
+                FROM produto_venda pv
+                JOIN vendas v ON v.id = pv.venda_id
             )
-            ->groupBy('compra_produto.produto_id');
+            SELECT
+                p.nome,
+                compras.compra_id,
+                compras.data_compra,
+                compras.quantidade AS qtd_comprada,
 
-        $primeiraVenda = DB::table('produto_venda')
-            ->join('vendas', 'vendas.id', '=', 'produto_venda.venda_id')
-            ->select(
-                'produto_venda.produto_id',
-                DB::raw('MIN(vendas.data_venda) as primeira_venda')
-            )
-            ->groupBy('produto_venda.produto_id');
+                MIN(vendas.data_venda) AS primeira_venda,
+                MAX(vendas.data_venda) AS ultima_venda,
 
-        $resultado = DB::table('produtos')
-            ->leftJoinSub($primeiraCompra, 'pc', function ($join) {
-                $join->on('pc.produto_id', '=', 'produtos.id');
-            })
-            ->leftJoinSub($primeiraVenda, 'pv', function ($join) {
-                $join->on('pv.produto_id', '=', 'produtos.id');
-            })
-            ->whereNotNull('pc.primeira_compra')
-            ->whereNotNull('pv.primeira_venda')
-            ->select(
-                'produtos.id',
-                'produtos.nome',
-                'pc.primeira_compra',
-                'pv.primeira_venda',
+                ROUND(
+                    AVG(vendas.data_venda - compras.data_compra)::numeric
+                , 2) AS media_dias_lote
 
-                DB::raw("
-                    DATE_PART(
-                        'day',
-                        pv.primeira_venda::timestamp
-                        - pc.primeira_compra::timestamp
-                    ) as media_dias
-                ")
-            )
-            ->orderByDesc('media_dias')
-            ->get();
+            FROM vendas
+            JOIN compras
+                ON compras.produto_id = vendas.produto_id
+                AND vendas.saldo_venda <= compras.saldo_compra
+                AND vendas.data_venda >= compras.data_compra
+
+            JOIN produtos p ON p.id = compras.produto_id
+
+            GROUP BY
+                p.nome,
+                compras.compra_id,
+                compras.data_compra,
+                compras.quantidade
+
+            ORDER BY
+                p.nome,
+                compras.data_compra
+        ");
 
         return response()->json($resultado);
     }

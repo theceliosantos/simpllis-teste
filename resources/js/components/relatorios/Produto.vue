@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, computed, watch, nextTick } from 'vue'
 import { Chart } from 'chart.js/auto'
+import ChartDataLabels from 'chartjs-plugin-datalabels'
 
 const relatorioSelecionado = ref('ativos')
 const ativos = ref([])
@@ -12,6 +13,8 @@ const marcaSelecionada = ref(null)
 const produtosPorMarca = ref([])
 const chartRef = ref(null)
 let chartInstance = null
+
+Chart.register(ChartDataLabels)
 
 function montarGraficoAtivos() {
 
@@ -28,7 +31,7 @@ function montarGraficoAtivos() {
     }
 
     chartInstance = new Chart(chartRef.value, {
-        type: 'doughnut', 
+        type: 'doughnut',
 
         data: {
             labels: ['Ativos', 'Inativos'],
@@ -48,6 +51,15 @@ function montarGraficoAtivos() {
             plugins: {
                 legend: {
                     position: 'bottom'
+                },
+
+                datalabels: {
+                    color: '#fff',
+                    font: {
+                        weight: 'bold',
+                        size: 14
+                    },
+                    formatter: (value) => value
                 }
             }
         }

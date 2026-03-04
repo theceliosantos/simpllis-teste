@@ -1,6 +1,9 @@
 <script setup>
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { Chart } from 'chart.js/auto'
+import ChartDataLabels from 'chartjs-plugin-datalabels'
+
+Chart.register(ChartDataLabels)
 
 const relatorioSelecionado = ref('periodo')
 const start = ref(null)
@@ -122,12 +125,28 @@ function montarGraficoDia() {
         },
         options: {
             responsive: true,
-            scales: { y: { beginAtZero: true } }
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grace: '20%'
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                datalabels: {
+                    anchor: 'end',
+                    align: 'top',
+                    color: '#000',
+                    font: { weight: 'bold' },
+                    formatter: (value) => value
+                }
+            }
         }
     })
 }
 
 function montarGraficoCliente() {
+
     if (!chartClienteRef.value) return
 
     const top = vendasPorCliente.value.slice(0, 10)
@@ -142,14 +161,33 @@ function montarGraficoCliente() {
         data: {
             labels,
             datasets: [{
-                label: 'Total por cliente (Top 10)',
+                label: 'Total por cliente',
                 data: valores,
                 backgroundColor: '#16a34a'
             }]
         },
         options: {
             responsive: true,
-            scales: { y: { beginAtZero: true } }
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grace: '20%'
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                datalabels: {
+                    anchor: 'end',
+                    align: 'top',
+                    color: '#000',
+                    font: {
+                        weight: 'bold'
+                    },
+                    formatter: (value) => value
+                }
+            }
         }
     })
 }
@@ -353,7 +391,7 @@ function btnClass(tipo) {
 
             <!-- Gráfico Top 10 -->
             <div class="p-6 border-b">
-                <canvas ref="chartClienteRef" height="120"></canvas>
+                <canvas ref="chartClienteRef" height="130"></canvas>
             </div>
 
             <!-- Tabela -->
@@ -371,7 +409,8 @@ function btnClass(tipo) {
                         <tr v-for="c in dadosPaginados" :key="c.cliente_id" class="hover:bg-gray-50">
                             <td class="px-4 py-3 text-gray-700">{{ c.cliente?.nome ?? `Cliente #${c.cliente_id}` }}</td>
                             <td class="px-4 py-3 text-center text-gray-700">{{ c.qtd_vendas }}</td>
-                            <td class="px-4 py-3 text-center text-gray-800 font-medium">{{ formatMoney(c.total_vendas) }}</td>
+                            <td class="px-4 py-3 text-center text-gray-800 font-medium">{{ formatMoney(c.total_vendas)
+                                }}</td>
                         </tr>
 
                         <tr v-if="!dadosPaginados.length">
@@ -501,7 +540,7 @@ function btnClass(tipo) {
                             <td class="px-4 py-3 text-gray-700">{{ gm.grupo }}</td>
                             <td class="px-4 py-3 text-gray-700">{{ gm.marca }}</td>
                             <td class="px-4 py-3 text-center text-gray-700">{{ gm.qtd ?? gm.qtd_vendida ?? '-' }}</td>
-                            <td class="px-4 py-3 text-center text-gray-800 font-medium">{{(gm.valor_total) }}</td>
+                            <td class="px-4 py-3 text-center text-gray-800 font-medium">{{ (gm.valor_total) }}</td>
                         </tr>
 
                         <tr v-if="!dadosPaginados.length">
@@ -567,7 +606,7 @@ function btnClass(tipo) {
                             <td class="px-4 py-3 text-gray-700">{{ p.grupo?.nome }}</td>
                             <td class="px-4 py-3 text-gray-700">{{ p.marca?.nome }}</td>
                             <td class="px-4 py-3 text-center text-gray-700">{{ p.estoque ?? '-' }}</td>
-                            
+
                         </tr>
 
                         <tr v-if="!dadosPaginados.length">
@@ -607,7 +646,6 @@ function btnClass(tipo) {
             </div>
 
         </div>
-
         <div v-if="relatorioSelecionado === 'mediaTempo'" class="bg-white border border-gray-200 rounded-xl shadow-sm">
 
             <div class="px-4 py-3 border-b bg-gray-50 rounded-t-xl">
@@ -617,34 +655,63 @@ function btnClass(tipo) {
             </div>
 
             <div class="overflow-x-auto">
-                <table class="w-full text-sm text-left">
-                    <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
-                        <tr>
-                            <th class="px-4 py-3">Produto</th>
-                            <th class="px-4 py-3">Primeira compra</th>
-                            <th class="px-4 py-3">Primeira venda</th>
-                            <th class="px-4 py-3 text-center">Dias</th>
-                        </tr>
-                    </thead>
+    <table class="w-full text-sm text-left">
+        <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
+            <tr>
+                <th class="px-4 py-3">Produto</th>
+                <th class="px-4 py-3 text-center">Compra</th>
+                <th class="px-4 py-3 text-center">Data compra</th>
+                <th class="px-4 py-3 text-center">Data primeira venda</th>
+                <th class="px-4 py-3 text-center">Data ultima venda</th>
+                <th class="px-4 py-3 text-center">Qtd comprada</th>
+                <th class="px-4 py-3 text-center">Média (dias)</th>
+            </tr>
+        </thead>
 
-                    <tbody class="divide-y divide-gray-100">
-                        <tr v-for="m in dadosPaginados" :key="m.id" class="hover:bg-gray-50">
-                            <td class="px-4 py-3 text-gray-700">{{ m.nome }}</td>
-                            <td class="px-4 py-3 text-gray-700">{{ formatDateBr(m.primeira_compra) }}</td>
-                            <td class="px-4 py-3 text-gray-700">{{ formatDateBr(m.primeira_venda) }}</td>
-                            <td class="px-4 py-3 text-center text-gray-800 font-medium">{{ m.media_dias }}</td>
-                        </tr>
+        <tbody class="divide-y divide-gray-100">
+            <tr
+                v-for="m in dadosPaginados"
+                :key="m.compra_id"
+                class="hover:bg-gray-50"
+            >
+                <td class="px-4 py-3 text-gray-700 font-medium">
+                    {{ m.nome }}
+                </td>
 
-                        <tr v-if="!dadosPaginados.length">
-                            <td colspan="4" class="px-4 py-6 text-center text-gray-400">
-                                Nenhum dado encontrado
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+                <td class="px-4 py-3 text-center text-gray-700">
+                    #{{ m.compra_id }}
+                </td>
 
+                <td class="px-4 py-3 text-center text-gray-700">
+                    {{ formatDateBr(m.data_compra) }}
+                </td>
+                
+                <td class="px-4 py-3 text-center text-gray-700">
+                    {{ formatDateBr(m.primeira_venda) }}
+                </td>
 
+                <td class="px-4 py-3 text-center text-gray-700">
+                    {{ formatDateBr(m.ultima_venda) }}
+                </td>
+                <td class="px-4 py-3 text-center text-gray-700">
+                    {{ m.qtd_comprada }}
+                </td>
+
+                <td class="px-4 py-3 text-center text-gray-800 font-semibold">
+                    {{ m.media_dias_lote ?? '-' }}
+                </td>
+            </tr>
+
+            <tr v-if="!dadosPaginados.length">
+                <td colspan="5" class="px-4 py-6 text-center text-gray-400">
+                    Nenhum dado encontrado
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+            <!-- Paginação -->
             <div class="flex items-center justify-between px-4 py-3 border-t bg-gray-50 rounded-b-xl">
                 <span class="text-sm text-gray-600">
                     Página {{ paginaAtual }} de {{ totalPaginas }}
@@ -672,6 +739,7 @@ function btnClass(tipo) {
             </div>
 
         </div>
+
 
         <!-- VENDAS POR DIA -->
 
