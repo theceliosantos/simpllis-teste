@@ -661,9 +661,9 @@ function btnClass(tipo) {
                 <th class="px-4 py-3">Produto</th>
                 <th class="px-4 py-3 text-center">Compra</th>
                 <th class="px-4 py-3 text-center">Data compra</th>
-                <th class="px-4 py-3 text-center">Data primeira venda</th>
-                <th class="px-4 py-3 text-center">Data ultima venda</th>
-                <th class="px-4 py-3 text-center">Qtd comprada</th>
+                <th class="px-4 py-3 text-center">primeira venda</th>
+                <th class="px-4 py-3 text-center">ultima venda</th>
+                <th class="px-4 py-3 text-center">Quantidade comprada</th>
                 <th class="px-4 py-3 text-center">Média (dias)</th>
             </tr>
         </thead>

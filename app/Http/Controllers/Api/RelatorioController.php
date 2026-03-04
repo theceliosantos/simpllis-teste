@@ -164,63 +164,68 @@ class RelatorioController extends Controller
 
     public function mediaTempoVendaPorProduto()
     {
-        $resultado = DB::select("
-            WITH compras AS (
-                SELECT
-                    cp.compra_id,
-                    cp.produto_id,
-                    c.data_compra,
-                    cp.quantidade,
-                    SUM(cp.quantidade)
-                        OVER (PARTITION BY cp.produto_id ORDER BY c.data_compra)
-                        AS saldo_compra
-                FROM compra_produto cp
-                JOIN compras c ON c.id = cp.compra_id
-            ),
-            vendas AS (
-                SELECT
-                    pv.produto_id,
-                    v.data_venda,
-                    pv.quantidade,
-                    SUM(pv.quantidade)
-                        OVER (PARTITION BY pv.produto_id ORDER BY v.data_venda)
-                        AS saldo_venda
-                FROM produto_venda pv
-                JOIN vendas v ON v.id = pv.venda_id
+        $compras = DB::table('compra_produto as cp')
+            ->join('compras as c', 'c.id', '=', 'cp.compra_id')
+            ->select(
+                'cp.compra_id',
+                'cp.produto_id',
+                'c.data_compra',
+                'cp.quantidade'
             )
-            SELECT
-                p.nome,
-                compras.compra_id,
-                compras.data_compra,
-                compras.quantidade AS qtd_comprada,
+            ->selectRaw("
+                SUM(cp.quantidade)
+                OVER (PARTITION BY cp.produto_id ORDER BY c.data_compra)
+                as saldo_compra
+            ");
 
-                MIN(vendas.data_venda) AS primeira_venda,
-                MAX(vendas.data_venda) AS ultima_venda,
+        $vendas = DB::table('produto_venda as pv')
+            ->join('vendas as v', 'v.id', '=', 'pv.venda_id')
+            ->select(
+                'pv.produto_id',
+                'v.data_venda',
+                'pv.quantidade'
+            )
+            ->selectRaw("
+                SUM(pv.quantidade)
+                OVER (PARTITION BY pv.produto_id ORDER BY v.data_venda)
+                as saldo_venda
+            ");
 
+        return DB::query()
+            ->fromSub($vendas, 'vendas')
+            ->joinSub($compras, 'compras', function ($join) {
+                $join->on('compras.produto_id', '=', 'vendas.produto_id')
+                    ->whereColumn('vendas.saldo_venda', '<=', 'compras.saldo_compra')
+                    ->whereColumn('vendas.data_venda', '>=', 'compras.data_compra');
+            })
+            ->join('produtos as p', 'p.id', '=', 'compras.produto_id')
+
+            ->select(
+                'p.nome',
+                'compras.compra_id',
+                'compras.data_compra',
+                DB::raw('compras.quantidade as qtd_comprada')
+            )
+
+            ->selectRaw('MIN(vendas.data_venda) as primeira_venda')
+            ->selectRaw('MAX(vendas.data_venda) as ultima_venda')
+
+            ->selectRaw("
                 ROUND(
                     AVG(vendas.data_venda - compras.data_compra)::numeric
-                , 2) AS media_dias_lote
+                ,1) as media_dias_lote
+            ")
 
-            FROM vendas
-            JOIN compras
-                ON compras.produto_id = vendas.produto_id
-                AND vendas.saldo_venda <= compras.saldo_compra
-                AND vendas.data_venda >= compras.data_compra
+            ->groupBy(
+                'p.nome',
+                'compras.compra_id',
+                'compras.data_compra',
+                'compras.quantidade'
+            )
 
-            JOIN produtos p ON p.id = compras.produto_id
-
-            GROUP BY
-                p.nome,
-                compras.compra_id,
-                compras.data_compra,
-                compras.quantidade
-
-            ORDER BY
-                p.nome,
-                compras.data_compra
-        ");
-
-        return response()->json($resultado);
+            ->orderBy('p.nome')
+            ->orderBy('nome')
+            ->get();
     }
 
     public function vendasPorDia(Request $request)
