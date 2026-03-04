@@ -21,7 +21,7 @@ const fetchJson = async (url) => {
 const montarGraficoPeriodo = () => {
   if (!chartRef.value) return
 
-  const labels = comprasPeriodo.value.map(c => c.data_compra)
+  const labels = comprasPeriodo.value.map(c => formatarData(c.data_compra))
   const valores = comprasPeriodo.value.map(c => Number(c.valor_total))
 
   chartInstance?.destroy()
